@@ -1,56 +1,32 @@
-#include <rate_limiter/MetricsCollector.hpp>
+#include "rate_limiter/MetricsCollector.hpp"
+#include <sstream>
+#include <iomanip>
 
 namespace rate_limiter {
 
-void MetricsCollector::recordAllowedRequest() {
-    totalRequests++;
-    allowedRequests++;
+void MetricsCollector::recordAllowed() {
+    allowed_.fetch_add(1, std::memory_order_relaxed);
 }
 
-void MetricsCollector::recordRejectedRequest() {
-    totalRequests++;
-    rejectedRequests++;
+void MetricsCollector::recordRejected() {
+    rejected_.fetch_add(1, std::memory_order_relaxed);
 }
 
-uint64_t MetricsCollector::getTotalRequests() const {
-    return totalRequests;
-}
+nlohmann::json MetricsCollector::snapshot() const {
+    uint64_t allowed  = allowed_.load(std::memory_order_relaxed);
+    uint64_t rejected = rejected_.load(std::memory_order_relaxed);
+    uint64_t total    = allowed + rejected;
+    double   rate     = (total > 0) ? (100.0 * rejected / total) : 0.0;
 
-uint64_t MetricsCollector::getAllowedRequests() const {
-    return allowedRequests;
-}
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(2) << rate << "%";
 
-uint64_t MetricsCollector::getRejectedRequests() const {
-    return rejectedRequests;
-}
-
-double MetricsCollector::getAllowanceRate() const {
-    if (totalRequests == 0) {
-        return 0.0;
-    }
-    return static_cast<double>(allowedRequests) / static_cast<double>(totalRequests);
-}
-
-void MetricsCollector::reset() {
-    totalRequests = 0;
-    allowedRequests = 0;
-    rejectedRequests = 0;
-}
-
-nlohmann::json MetricsCollector::toJson() const {
-    nlohmann::json j;
-    j["total_requests"] = totalRequests;
-    j["allowed_requests"] = allowedRequests;
-    j["rejected_requests"] = rejectedRequests;
-    j["allowance_rate"] = getAllowanceRate();
-    return j;
-}
-
-void MetricsCollector::fromJson(const nlohmann::json& j) {
-    totalRequests = j["total_requests"].get<uint64_t>();
-    allowedRequests = j["allowed_requests"].get<uint64_t>();
-    rejectedRequests = j["rejected_requests"].get<uint64_t>();
-    // allowance_rate is computed, not stored
+    return {
+        {"allowed",        allowed},
+        {"rejected",       rejected},
+        {"total",          total},
+        {"rejection_rate", oss.str()}
+    };
 }
 
 } // namespace rate_limiter

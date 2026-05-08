@@ -1,35 +1,26 @@
 // ─────────────────────────────────────────────
 // MetricsCollector
-// Tracks allowed/rejected requests and
-// computes allowance rate. Not thread-safe.
+// Lock-free counters using std::atomic.
+// fetch_add compiles to a single LOCK XADD
+// instruction — no mutex, no contention.
 // ─────────────────────────────────────────────
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <nlohmann/json.hpp>
 
 namespace rate_limiter {
 
 class MetricsCollector {
-private:
-    uint64_t totalRequests = 0;
-    uint64_t allowedRequests = 0;
-    uint64_t rejectedRequests = 0;
-
 public:
-    MetricsCollector() = default;
+    void recordAllowed();
+    void recordRejected();
+    nlohmann::json snapshot() const;
 
-    void recordAllowedRequest();
-    void recordRejectedRequest();
-
-    [[nodiscard]] uint64_t getTotalRequests() const;
-    [[nodiscard]] uint64_t getAllowedRequests() const;
-    [[nodiscard]] uint64_t getRejectedRequests() const;
-    [[nodiscard]] double getAllowanceRate() const;
-
-    void reset();
-
-    nlohmann::json toJson() const;
-    void fromJson(const nlohmann::json& j);
+private:
+    std::atomic<uint64_t> allowed_{0};
+    std::atomic<uint64_t> rejected_{0};
 };
 
 } // namespace rate_limiter
