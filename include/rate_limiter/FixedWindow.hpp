@@ -1,5 +1,11 @@
 // ─────────────────────────────────────────────
-// FixedWindow — stub (will be implemented in Task 8)
+// FixedWindow
+// Counts requests in a fixed time window.
+// Window resets when now >= windowStart + duration.
+// Known tradeoff: a burst at the end of window N
+// and start of N+1 can pass 2× the limit ("boundary
+// burst" problem). SlidingWindow avoids this.
+// Not thread-safe — caller must synchronize.
 // ─────────────────────────────────────────────
 #pragma once
 
@@ -18,9 +24,9 @@ public:
     void               deserialize(const nlohmann::json& j) override;
 
 private:
-    int                       maxRequests_;
+    int maxRequests_;
     std::chrono::milliseconds windowDuration_;
-    int                       count_{0};
+    int count_;
     std::chrono::steady_clock::time_point windowStart_;
 };
 
