@@ -14,7 +14,7 @@ class IRateLimitAlgorithm {
 public:
     virtual ~IRateLimitAlgorithm() = default;
 
-    virtual bool allowRequest() = 0;
+    [[nodiscard]] virtual bool allowRequest() = 0;
     virtual void reset() = 0;
 
     virtual nlohmann::json serialize() const = 0;
