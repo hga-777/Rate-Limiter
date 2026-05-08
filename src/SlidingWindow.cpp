@@ -14,7 +14,10 @@ namespace rate_limiter {
 SlidingWindow::SlidingWindow(int maxRequests, std::chrono::milliseconds windowDuration)
     : maxRequests_(maxRequests)
     , windowDuration_(windowDuration)
-{}
+{
+    if (maxRequests <= 0 || windowDuration.count() <= 0)
+        throw std::invalid_argument("SlidingWindow: maxRequests and windowDuration must be positive");
+}
 
 bool SlidingWindow::allowRequest() {
     auto now = std::chrono::steady_clock::now();
@@ -36,14 +39,14 @@ void SlidingWindow::reset() {
 }
 
 nlohmann::json SlidingWindow::serialize() const {
+    // Timestamps are steady_clock-based (process-local) and cannot be
+    // meaningfully restored across restarts — we serialize only config.
+    // On restore, the window starts fresh, which is conservative and correct.
     return {
         {"type",         "sliding_window"},
         {"max_requests", maxRequests_},
         {"window_ms",    windowDuration_.count()}
     };
-    // Timestamps are steady_clock-based (process-local) and cannot be
-    // meaningfully restored across restarts — we serialize only config.
-    // On restore, the window starts fresh, which is conservative and correct.
 }
 
 void SlidingWindow::deserialize(const nlohmann::json& j) {
