@@ -11,13 +11,14 @@ RateLimiterManager::RateLimiterManager(std::shared_ptr<MetricsCollector> metrics
 {}
 
 bool RateLimiterManager::allowRequest(const std::string& userId) {
-    if (!algorithmFactory_) {
-        throw std::runtime_error("Algorithm factory not set — call setAlgorithmFactory first");
-    }
-
-    // Fast path: shared lock — multiple threads can read concurrently.
+    // Read factory under shared lock to avoid data race with setAlgorithmFactory.
     {
         std::shared_lock<std::shared_mutex> readLock(mutex_);
+        if (!algorithmFactory_) {
+            throw std::runtime_error("Algorithm factory not set — call setAlgorithmFactory first");
+        }
+
+        // Fast path: existing user — serve without releasing the read lock.
         auto it = limiters_.find(userId);
         if (it != limiters_.end()) {
             bool allowed = it->second->allowRequest();
@@ -27,13 +28,18 @@ bool RateLimiterManager::allowRequest(const std::string& userId) {
     }
 
     // Slow path: exclusive write lock to insert new user.
-    // Double-check after acquiring write lock — another thread may have
-    // inserted this user between our two lock acquisitions.
+    // Explicit re-check (find) after acquiring write lock — another thread may
+    // have inserted this user between the two lock acquisitions. Using find
+    // rather than emplace-with-nullptr avoids a nullptr in limiters_ if the
+    // factory throws, and makes the double-checked locking pattern explicit.
+    // Note: the first allowRequest() call for a new user also runs under this
+    // exclusive lock — a minor serialisation point on cold paths only.
     {
         std::unique_lock<std::shared_mutex> writeLock(mutex_);
-        auto [it, inserted] = limiters_.emplace(userId, nullptr);
-        if (inserted) {
-            it->second = algorithmFactory_();
+        auto it = limiters_.find(userId);
+        if (it == limiters_.end()) {
+            auto [newIt, _] = limiters_.emplace(userId, algorithmFactory_());
+            it = newIt;
         }
         bool allowed = it->second->allowRequest();
         allowed ? metrics_->recordAllowed() : metrics_->recordRejected();
@@ -86,7 +92,10 @@ void RateLimiterManager::deserializeState(const nlohmann::json& state) {
             fw->deserialize(algoState);
             algo = std::move(fw);
         }
-        if (algo) limiters_.emplace(userId, std::move(algo));
+        if (!algo) {
+            throw std::runtime_error("deserializeState: unknown algorithm type '" + type + "'");
+        }
+        limiters_.emplace(userId, std::move(algo));
     }
 }
 
