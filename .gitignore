@@ -1,0 +1,9 @@
+build/
+out/
+.cache/
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+CMakeSettings.json
