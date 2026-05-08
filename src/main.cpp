@@ -22,6 +22,6 @@ int main() {
     std::cout << "\nMetrics:\n"
               << "  Allowed:        " << snap["allowed"]        << "\n"
               << "  Rejected:       " << snap["rejected"]       << "\n"
-              << "  Rejection Rate: " << snap["rejection_rate"] << "\n";
+              << "  Rejection Rate: " << snap["rejection_rate"].get<std::string>() << "\n";
     return 0;
 }
