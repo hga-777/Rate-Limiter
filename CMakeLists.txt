@@ -51,6 +51,14 @@ add_custom_command(
     COMMENT "Copying web dashboard to output directory"
 )
 
+add_custom_command(
+    TARGET rate_limiter POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+            "${CMAKE_SOURCE_DIR}/launch.bat"
+            "$<TARGET_FILE_DIR:rate_limiter>/launch.bat"
+    COMMENT "Copying launch script to output directory"
+)
+
 add_executable(rate_limiter_sim simulations/multi_thread_sim.cpp)
 target_link_libraries(rate_limiter_sim PRIVATE rate_limiter_lib)
 
