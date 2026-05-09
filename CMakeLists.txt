@@ -43,6 +43,14 @@ target_compile_options(rate_limiter_lib PRIVATE
 add_executable(rate_limiter src/main.cpp)
 target_link_libraries(rate_limiter PRIVATE rate_limiter_lib)
 
+add_custom_command(
+    TARGET rate_limiter POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/web"
+            "$<TARGET_FILE_DIR:rate_limiter>/web"
+    COMMENT "Copying web dashboard to output directory"
+)
+
 add_executable(rate_limiter_sim simulations/multi_thread_sim.cpp)
 target_link_libraries(rate_limiter_sim PRIVATE rate_limiter_lib)
 

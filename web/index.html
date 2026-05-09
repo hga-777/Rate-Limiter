@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rate Limiter Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f1117;
+      --surface: #1a1d27;
+      --border:  #2a2d3a;
+      --accent:  #4f8ef7;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --yellow:  #f59e0b;
+      --text:    #e2e8f0;
+      --muted:   #64748b;
+      --radius:  8px;
+      --mono:    'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
+    .subtitle { color: var(--muted); font-size: 0.875rem; margin-bottom: 28px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .full-width { grid-column: 1 / -1; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .card-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Metrics ─────────────────────────────────────────────────────────── */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 700px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
+
+    .metric-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      text-align: center;
+    }
+    .metric-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .metric-value {
+      font-size: 2rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .metric-value.allowed  { color: var(--green); }
+    .metric-value.rejected { color: var(--red); }
+    .metric-value.total    { color: var(--accent); }
+    .metric-value.rate     { color: var(--yellow); }
+
+    .metrics-footer { margin-top: 10px; font-size: 0.72rem; color: var(--muted); text-align: right; }
+
+    .pulse-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      margin-right: 5px;
+      vertical-align: middle;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+    /* ── Forms ───────────────────────────────────────────────────────────── */
+    .form-group { margin-bottom: 14px; }
+
+    label { display: block; font-size: 0.8rem; font-weight: 500; color: var(--muted); margin-bottom: 5px; }
+
+    input[type="text"],
+    input[type="number"],
+    select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.875rem;
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    input[type="text"]:focus,
+    input[type="number"]:focus,
+    select:focus { border-color: var(--accent); }
+
+    select option { background: var(--surface); }
+
+    .algo-fields         { display: none; }
+    .algo-fields.active  { display: block; }
+
+    /* ── Button ──────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 9px 18px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      width: 100%;
+    }
+    .btn:hover   { opacity: 0.85; }
+    .btn:active  { opacity: 0.7; }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ── Result badge ────────────────────────────────────────────────────── */
+    .result {
+      margin-top: 12px;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      display: none;
+    }
+    .result.visible  { display: block; }
+    .result.allowed  { background: #14532d44; border: 1px solid #22c55e44; color: var(--green); }
+    .result.rejected { background: #7f1d1d44; border: 1px solid #ef444444; color: var(--red); }
+    .result.error    { background: #78350f44; border: 1px solid #f59e0b44; color: var(--yellow); }
+    .result.info     { background: #1e3a5f44; border: 1px solid #4f8ef744; color: var(--accent); }
+
+    /* ── Log ─────────────────────────────────────────────────────────────── */
+    .log-controls { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+    .btn-small {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 4px;
+      padding: 3px 10px;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    .btn-small:hover { border-color: var(--accent); color: var(--accent); }
+
+    .log-container {
+      height: 260px;
+      overflow-y: auto;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      padding: 10px 12px;
+    }
+    .log-container::-webkit-scrollbar { width: 6px; }
+    .log-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    .log-entry {
+      display: flex;
+      align-items: baseline;
+      gap: 8px;
+      padding: 3px 0;
+      border-bottom: 1px solid #ffffff08;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .log-time  { color: var(--muted); flex-shrink: 0; width: 78px; }
+    .log-badge {
+      flex-shrink: 0;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    .log-badge.ALLOWED  { background: #14532d; color: var(--green); }
+    .log-badge.REJECTED { background: #7f1d1d; color: var(--red); }
+    .log-badge.REGISTER { background: #1e3a5f; color: var(--accent); }
+    .log-badge.ERROR    { background: #78350f; color: var(--yellow); }
+
+    .log-msg   { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .log-empty { color: var(--muted); text-align: center; padding: 20px 0; font-style: italic; }
+  </style>
+</head>
+<body>
+
+  <div style="max-width:1200px; margin:0 auto;">
+    <h1>Rate Limiter Dashboard</h1>
+    <p class="subtitle">cpp-httplib backend &mdash; live monitoring &amp; control</p>
+  </div>
+
+  <div class="grid">
+
+    <!-- ── Live Metrics ─────────────────────────────────────────────────── -->
+    <div class="card full-width">
+      <div class="card-title"><span class="pulse-dot"></span>Live Metrics</div>
+      <div class="metrics-grid">
+        <div class="metric-box">
+          <div class="metric-label">Allowed</div>
+          <div class="metric-value allowed" id="m-allowed">—</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Rejected</div>
+          <div class="metric-value rejected" id="m-rejected">—</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Total</div>
+          <div class="metric-value total" id="m-total">—</div>
+        </div>
+        <div class="metric-box">
+          <div class="metric-label">Rejection Rate</div>
+          <div class="metric-value rate" id="m-rate">—</div>
+        </div>
+      </div>
+      <div class="metrics-footer" id="metrics-ts">Waiting for first poll…</div>
+    </div>
+
+    <!-- ── Register User ─────────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">Register User</div>
+
+      <div class="form-group">
+        <label for="reg-user">User ID</label>
+        <input type="text" id="reg-user" placeholder="e.g. alice" />
+      </div>
+
+      <div class="form-group">
+        <label for="reg-algo">Algorithm</label>
+        <select id="reg-algo" onchange="onAlgoChange()">
+          <option value="token_bucket">Token Bucket</option>
+          <option value="sliding_window">Sliding Window</option>
+          <option value="fixed_window">Fixed Window</option>
+        </select>
+      </div>
+
+      <div class="algo-fields active" id="fields-token_bucket">
+        <div class="form-group">
+          <label for="tb-capacity">Capacity (tokens)</label>
+          <input type="number" id="tb-capacity" value="10" min="1" step="1" />
+        </div>
+        <div class="form-group">
+          <label for="tb-rate">Refill Rate (tokens / sec)</label>
+          <input type="number" id="tb-rate" value="2" min="0" step="0.5" />
+        </div>
+      </div>
+
+      <div class="algo-fields" id="fields-sliding_window">
+        <div class="form-group">
+          <label for="sw-max">Max Requests</label>
+          <input type="number" id="sw-max" value="10" min="1" step="1" />
+        </div>
+        <div class="form-group">
+          <label for="sw-window">Window (ms)</label>
+          <input type="number" id="sw-window" value="1000" min="100" step="100" />
+        </div>
+      </div>
+
+      <div class="algo-fields" id="fields-fixed_window">
+        <div class="form-group">
+          <label for="fw-max">Max Requests</label>
+          <input type="number" id="fw-max" value="10" min="1" step="1" />
+        </div>
+        <div class="form-group">
+          <label for="fw-window">Window (ms)</label>
+          <input type="number" id="fw-window" value="1000" min="100" step="100" />
+        </div>
+      </div>
+
+      <button class="btn" id="reg-btn" onclick="registerUser()">Register</button>
+      <div class="result" id="reg-result"></div>
+    </div>
+
+    <!-- ── Check Rate Limit ──────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-title">Check Rate Limit</div>
+
+      <div class="form-group">
+        <label for="check-user">User ID</label>
+        <input type="text" id="check-user" placeholder="e.g. alice" />
+      </div>
+
+      <button class="btn" id="check-btn" onclick="checkAllow()">Send Request</button>
+      <div class="result" id="check-result"></div>
+    </div>
+
+    <!-- ── Request Log ───────────────────────────────────────────────────── -->
+    <div class="card full-width">
+      <div class="card-title">Request Log</div>
+      <div class="log-controls">
+        <button class="btn-small" onclick="clearLog()">Clear</button>
+      </div>
+      <div class="log-container" id="log">
+        <div class="log-empty" id="log-empty">No requests yet.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const BASE    = '';     // same-origin — no hardcoded host
+    const POLL_MS = 2000;
+    const MAX_LOG = 50;
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    function ts() {
+      const d = new Date();
+      return [d.getHours(), d.getMinutes(), d.getSeconds()]
+        .map(n => String(n).padStart(2, '0')).join(':');
+    }
+    function fmt(n) { return typeof n === 'number' ? n.toLocaleString() : n; }
+
+    // ── Algorithm field visibility ────────────────────────────────────────
+    function onAlgoChange() {
+      const algo = document.getElementById('reg-algo').value;
+      document.querySelectorAll('.algo-fields').forEach(el =>
+        el.classList.toggle('active', el.id === 'fields-' + algo)
+      );
+    }
+
+    // ── Log ───────────────────────────────────────────────────────────────
+    function addLog(badge, message) {
+      const c = document.getElementById('log');
+      const e = document.getElementById('log-empty');
+      if (e) e.remove();
+
+      const entries = c.querySelectorAll('.log-entry');
+      if (entries.length >= MAX_LOG) entries[entries.length - 1].remove();
+
+      const row = document.createElement('div');
+      row.className = 'log-entry';
+      row.innerHTML =
+        `<span class="log-time">${ts()}</span>` +
+        `<span class="log-badge ${badge}">${badge}</span>` +
+        `<span class="log-msg">${message}</span>`;
+      c.insertBefore(row, c.firstChild);
+    }
+
+    function clearLog() {
+      document.getElementById('log').innerHTML =
+        '<div class="log-empty" id="log-empty">No requests yet.</div>';
+    }
+
+    // ── Result badge ──────────────────────────────────────────────────────
+    function showResult(id, cls, text) {
+      const el = document.getElementById(id);
+      el.className = 'result visible ' + cls;
+      el.textContent = text;
+    }
+
+    // ── Metrics polling ───────────────────────────────────────────────────
+    async function fetchMetrics() {
+      try {
+        const r = await fetch(BASE + '/metrics');
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        const d = await r.json();
+        document.getElementById('m-allowed').textContent  = fmt(d.allowed);
+        document.getElementById('m-rejected').textContent = fmt(d.rejected);
+        document.getElementById('m-total').textContent    = fmt(d.total);
+        document.getElementById('m-rate').textContent     = d.rejection_rate;
+        document.getElementById('metrics-ts').textContent =
+          'Last updated: ' + new Date().toLocaleTimeString();
+      } catch (e) {
+        document.getElementById('metrics-ts').textContent =
+          'Poll failed: ' + e.message + ' — is the server running?';
+      }
+    }
+
+    // ── Register ──────────────────────────────────────────────────────────
+    async function registerUser() {
+      const userId = document.getElementById('reg-user').value.trim();
+      const algo   = document.getElementById('reg-algo').value;
+      if (!userId) { showResult('reg-result', 'error', 'User ID is required.'); return; }
+
+      const payload = { user_id: userId, algorithm: algo };
+      if (algo === 'token_bucket') {
+        payload.capacity    = parseFloat(document.getElementById('tb-capacity').value) || 10;
+        payload.refill_rate = parseFloat(document.getElementById('tb-rate').value)     || 0;
+      } else if (algo === 'sliding_window') {
+        payload.max_requests = parseInt(document.getElementById('sw-max').value,    10) || 10;
+        payload.window_ms    = parseInt(document.getElementById('sw-window').value, 10) || 1000;
+      } else {
+        payload.max_requests = parseInt(document.getElementById('fw-max').value,    10) || 10;
+        payload.window_ms    = parseInt(document.getElementById('fw-window').value, 10) || 1000;
+      }
+
+      const btn = document.getElementById('reg-btn');
+      btn.disabled = true;
+      showResult('reg-result', 'info', 'Registering…');
+
+      try {
+        const r = await fetch(BASE + '/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await r.json();
+        if (r.ok && d.registered) {
+          const label = { token_bucket: 'Token Bucket', sliding_window: 'Sliding Window', fixed_window: 'Fixed Window' }[algo];
+          const detail = algo === 'token_bucket'
+            ? `cap=${payload.capacity}, refill=${payload.refill_rate}/s`
+            : `max=${payload.max_requests}, window=${payload.window_ms}ms`;
+          showResult('reg-result', 'allowed', `Registered "${userId}" — ${label} (${detail})`);
+          addLog('REGISTER', `"${userId}" → ${label} (${detail})`);
+        } else {
+          const msg = d.error || 'Registration failed';
+          showResult('reg-result', 'error', msg);
+          addLog('ERROR', `Register "${userId}": ${msg}`);
+        }
+      } catch (e) {
+        showResult('reg-result', 'error', 'Network error: ' + e.message);
+        addLog('ERROR', 'Register network error: ' + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ── Check allow ───────────────────────────────────────────────────────
+    async function checkAllow() {
+      const userId = document.getElementById('check-user').value.trim();
+      if (!userId) { showResult('check-result', 'error', 'User ID is required.'); return; }
+
+      const btn = document.getElementById('check-btn');
+      btn.disabled = true;
+
+      try {
+        const r = await fetch(BASE + '/allow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: userId })
+        });
+        const d = await r.json();
+        if (d.allowed) {
+          showResult('check-result', 'allowed', `ALLOWED — "${userId}" passed the rate limit check.`);
+          addLog('ALLOWED', `"${userId}" → allowed`);
+        } else {
+          showResult('check-result', 'rejected', `REJECTED (429) — "${userId}" is rate limited.`);
+          addLog('REJECTED', `"${userId}" → rate limited`);
+        }
+      } catch (e) {
+        showResult('check-result', 'error', 'Network error: ' + e.message);
+        addLog('ERROR', `Allow "${userId}": ` + e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // ── Keyboard shortcuts ────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('reg-user').addEventListener('keydown',   e => { if (e.key === 'Enter') registerUser(); });
+      document.getElementById('check-user').addEventListener('keydown', e => { if (e.key === 'Enter') checkAllow(); });
+    });
+
+    // ── Bootstrap ─────────────────────────────────────────────────────────
+    fetchMetrics();
+    setInterval(fetchMetrics, POLL_MS);
+  </script>
+</body>
+</html>

@@ -8,10 +8,12 @@ namespace rate_limiter {
 
 HttpServer::HttpServer(std::shared_ptr<RateLimiterManager> manager,
                        std::shared_ptr<MetricsCollector>   metrics,
-                       int port)
+                       int port,
+                       std::string webRoot)
     : manager_(std::move(manager))
     , metrics_(std::move(metrics))
     , port_(port)
+    , webRoot_(std::move(webRoot))
 {
     setupRoutes();
 }
@@ -28,6 +30,16 @@ void HttpServer::setupRoutes() {
             std::cerr << "[exception] " << req.path << ": " << e.what() << "\n";
         }
         res.status = 500;
+    });
+
+    // CORS — allows the dashboard to call the API even when opened from the filesystem.
+    server_.set_default_headers({
+        {"Access-Control-Allow-Origin",  "*"},
+        {"Access-Control-Allow-Headers", "Content-Type"},
+        {"Access-Control-Allow-Methods", "GET, POST, OPTIONS"}
+    });
+    server_.Options(".*", [](const httplib::Request&, httplib::Response& res) {
+        res.status = 204;
     });
 
     // GET /health — quick liveness check
@@ -110,11 +122,20 @@ void HttpServer::setupRoutes() {
         manager_->registerUser(userId, std::move(algo));
         res.set_content(R"({"registered":true})", "application/json");
     });
+
+    // Static file serving — must be last so API routes take priority.
+    // Serves web/index.html at http://localhost:<port>/
+    if (!server_.set_mount_point("/", webRoot_)) {
+        std::cerr << "[HttpServer] WARNING: web root '" << webRoot_
+                  << "' not found — dashboard unavailable.\n"
+                  << "            Build the project to copy web/ next to the executable.\n";
+    }
 }
 
 void HttpServer::start() {
     serverThread_ = std::thread([this]() {
         std::cout << "HTTP server listening on port " << port_ << "\n";
+        std::cout << "Dashboard:   http://localhost:" << port_ << "/\n";
         server_.listen("0.0.0.0", port_);
     });
 }
