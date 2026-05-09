@@ -17,7 +17,12 @@ FetchContent_Declare(
     GIT_REPOSITORY https://github.com/google/googletest.git
     GIT_TAG        v1.14.0
 )
-FetchContent_MakeAvailable(nlohmann_json googletest)
+FetchContent_Declare(
+    httplib
+    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+    GIT_TAG        v0.15.3
+)
+FetchContent_MakeAvailable(nlohmann_json googletest httplib)
 
 add_library(rate_limiter_lib STATIC
     src/MetricsCollector.cpp
@@ -25,9 +30,10 @@ add_library(rate_limiter_lib STATIC
     src/RateLimiterManager.cpp
     src/SlidingWindow.cpp
     src/FixedWindow.cpp
+    src/HttpServer.cpp
 )
 target_include_directories(rate_limiter_lib PUBLIC include)
-target_link_libraries(rate_limiter_lib PUBLIC nlohmann_json::nlohmann_json)
+target_link_libraries(rate_limiter_lib PUBLIC nlohmann_json::nlohmann_json httplib::httplib)
 target_compile_options(rate_limiter_lib PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra>
