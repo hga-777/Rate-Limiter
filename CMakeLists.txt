@@ -36,5 +36,8 @@ target_compile_options(rate_limiter_lib PRIVATE
 add_executable(rate_limiter src/main.cpp)
 target_link_libraries(rate_limiter PRIVATE rate_limiter_lib)
 
+add_executable(rate_limiter_sim simulations/multi_thread_sim.cpp)
+target_link_libraries(rate_limiter_sim PRIVATE rate_limiter_lib)
+
 enable_testing()
 add_subdirectory(tests)
