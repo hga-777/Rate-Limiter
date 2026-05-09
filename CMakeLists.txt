@@ -31,6 +31,7 @@ add_library(rate_limiter_lib STATIC
     src/SlidingWindow.cpp
     src/FixedWindow.cpp
     src/HttpServer.cpp
+    src/PersistenceManager.cpp
 )
 target_include_directories(rate_limiter_lib PUBLIC include)
 target_link_libraries(rate_limiter_lib PUBLIC nlohmann_json::nlohmann_json httplib::httplib)

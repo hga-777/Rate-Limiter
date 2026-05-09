@@ -21,27 +21,48 @@ HttpServer::~HttpServer() {
 }
 
 void HttpServer::setupRoutes() {
+    server_.set_exception_handler([](const httplib::Request& req, httplib::Response& res,
+                                     std::exception_ptr ep) {
+        try { if (ep) std::rethrow_exception(ep); }
+        catch (const std::exception& e) {
+            std::cerr << "[exception] " << req.path << ": " << e.what() << "\n";
+        }
+        res.status = 500;
+    });
+
+    // GET /health — quick liveness check
+    server_.Get("/health", [](const httplib::Request&, httplib::Response& res) {
+        res.set_content(R"({"status":"ok"})", "application/json");
+    });
+
     // POST /allow  {"user_id": "alice"}
     server_.Post("/allow", [this](const httplib::Request& req, httplib::Response& res) {
-        nlohmann::json body;
         try {
-            body = nlohmann::json::parse(req.body);
-        } catch (...) {
-            res.status = 400;
-            res.set_content(R"({"error":"invalid JSON"})", "application/json");
-            return;
+            nlohmann::json body;
+            try {
+                body = nlohmann::json::parse(req.body);
+            } catch (...) {
+                res.status = 400;
+                res.set_content(R"({"error":"invalid JSON"})", "application/json");
+                return;
+            }
+            if (!body.contains("user_id") || !body["user_id"].is_string()) {
+                res.status = 400;
+                res.set_content(R"({"error":"missing user_id"})", "application/json");
+                return;
+            }
+            std::string userId = body["user_id"].get<std::string>();
+            bool allowed = manager_->allowRequest(userId);
+            res.status = allowed ? 200 : 429;
+            res.set_content(
+                nlohmann::json{{"allowed", allowed}, {"user_id", userId}}.dump(),
+                "application/json");
+        } catch (const std::exception& e) {
+            res.status = 500;
+            res.set_content(
+                nlohmann::json{{"error", std::string(e.what())}}.dump(),
+                "application/json");
         }
-        if (!body.contains("user_id") || !body["user_id"].is_string()) {
-            res.status = 400;
-            res.set_content(R"({"error":"missing user_id"})", "application/json");
-            return;
-        }
-        std::string userId = body["user_id"].get<std::string>();
-        bool allowed = manager_->allowRequest(userId);
-        res.status = allowed ? 200 : 429;
-        res.set_content(
-            nlohmann::json{{"allowed", allowed}, {"user_id", userId}}.dump(),
-            "application/json");
     });
 
     // GET /metrics

@@ -1,46 +1,49 @@
 #include <iostream>
 #include <memory>
+#include <atomic>
+#include <thread>
+#include <chrono>
+#include <csignal>
 #include "rate_limiter/RateLimiterManager.hpp"
 #include "rate_limiter/MetricsCollector.hpp"
 #include "rate_limiter/TokenBucket.hpp"
-#include "rate_limiter/SlidingWindow.hpp"
-#include "rate_limiter/FixedWindow.hpp"
+#include "rate_limiter/HttpServer.hpp"
+#include "rate_limiter/PersistenceManager.hpp"
 
 using namespace rate_limiter;
-using namespace std::chrono_literals;
 
-static void runDemo(RateLimiterManager& mgr, const std::string& userId,
-                    const std::string& label) {
-    std::cout << "\n--- " << label << " ---\n";
-    for (int i = 0; i < 5; ++i) {
-        bool ok = mgr.allowRequest(userId);
-        std::cout << "Request " << (i + 1) << ": " << (ok ? "ALLOWED" : "REJECTED") << "\n";
-    }
+static std::atomic<bool> g_running{true};
+
+extern "C" void signalHandler(int) {
+    g_running = false;
 }
 
 int main() {
+    std::signal(SIGINT,  signalHandler);
+    std::signal(SIGTERM, signalHandler);
+
     auto metrics = std::make_shared<MetricsCollector>();
-    RateLimiterManager manager(metrics);
+    auto manager = std::make_shared<RateLimiterManager>(metrics);
 
-    // Phase 1: Token Bucket
-    manager.setAlgorithmFactory([]() {
-        return std::make_unique<TokenBucket>(3.0, 1.0);
+    manager->setAlgorithmFactory([]() {
+        return std::make_unique<TokenBucket>(10.0, 2.0);
     });
-    runDemo(manager, "alice", "Token Bucket (capacity=3)");
 
-    // Phase 2: Hot-swap to Sliding Window for new users
-    manager.setAlgorithmFactory([]() {
-        return std::make_unique<SlidingWindow>(3, 1000ms);
-    });
-    manager.registerUser("bob", std::make_unique<SlidingWindow>(3, 1000ms));
-    runDemo(manager, "bob", "Sliding Window (max=3, window=1s) — bob");
+    // Restore state from previous run; periodic save every 30 s.
+    PersistenceManager persistence(manager, "rate_limiter_state.json",
+                                   std::chrono::seconds{30});
+    persistence.start();
 
-    // Phase 2: Fixed Window
-    manager.setAlgorithmFactory([]() {
-        return std::make_unique<FixedWindow>(3, 1000ms);
-    });
-    manager.registerUser("carol", std::make_unique<FixedWindow>(3, 1000ms));
-    runDemo(manager, "carol", "Fixed Window (max=3, window=1s) — carol");
+    HttpServer server(manager, metrics, 8080);
+    server.start();
 
+    std::cout << "Rate Limiter running on port 8080. Send SIGINT/SIGTERM to stop.\n";
+
+    while (g_running) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+
+    server.stop();
+    persistence.stop();   // final save before exit
     return 0;
 }
